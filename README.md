@@ -10,4 +10,4 @@ This is the README file for the `app` project. It provides an overview of the pr
 - Modular: The `app` framework follows a modular architecture, making it easy to add and remove features as needed.
 
 ## License
-The `app` framework is licensed under the [MIT License](https://opensource.org/licenses/MIT)
+The `app` framework is licensed under the [Apache-2.0 License](https://opensource.org/licenses/Apache-2.0).
