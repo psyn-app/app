@@ -377,8 +377,13 @@ namespace psyn {
         private config:any                                      = null;
         private loadedData:{[key:string]:any}                   = {};
         private isReady:boolean                                 = false;
+
+        // data sources
         private dataSources:{[key:string]:DataSource}           = {};
         private dataSourceIntervalTimers:{[key:string]:number}  = {};
+
+        // libraries
+        private loadedLibraries:{[key:string]:any}              = {};
 
         // public properties
         public Events:EventTarget;
@@ -399,26 +404,35 @@ namespace psyn {
             // create event target
             this.Events = new EventTarget();
 
+            // instanciate
+            this.instanciate();
+        }
+
+
+
+        /**
+         * Instanciate
+         * 
+         * Instanciate the application
+         * @returns Promise<void>
+         */
+        private async instanciate() : Promise<void> {
+            
             // load configuration
-            this.applicationConfiguration().then((config:any) => {
+            this.config = await this.applicationConfiguration();
 
-                // set configuration
-                this.config = config
+            // set environment
+            this.environment = this.detectEnvironment();
 
-                // set environment
-                this.environment = this.detectEnvironment();
+            // initialize events
+            this.initializeEvents();
 
-                // initialize events
-                this.initializeEvents();
+            // if browser runtime mode
+            // attach to window
+            if (this.environment === RuntimeMode.Browser) window['app'] = this;
 
-                // if browser runtime mode
-                // attach to window
-                if (this.environment === RuntimeMode.Browser) window['app'] = this;
-
-                // dispatch application ready event
-                this.Events.dispatchEvent(this.eventApplicationReady);
-
-            });
+            // dispatch application ready event
+            this.Events.dispatchEvent(this.eventApplicationReady);
         }
 
 
@@ -452,6 +466,67 @@ namespace psyn {
          */
         public get ready() : boolean {
             return this.isReady;
+        }
+
+
+
+        /**
+         * Libraries
+         * 
+         * Get the loaded libraries for the application
+         */
+        public get libraries() : {[key:string]:any} {
+            return this.loadedLibraries;
+        }
+
+
+
+        /**
+         * Load Library
+         * 
+         * Load a library into the application
+         * @param url The URL of the library
+         * @param name The name of the library
+         * @returns Promise<any>
+         */
+        public async loadLibrary(url:string, name:string) : Promise<any> {
+
+            try {
+
+                // if library is already loaded, return it
+                if (this.loadedLibraries[name]) return this.loadedLibraries[name];
+
+                // load library
+                const lib:any = await import(url);
+
+                // add to loaded libraries
+                this.loadedLibraries[name] = lib;
+
+                // return library
+                return lib;
+
+            } catch (error) {
+
+                // log error
+                console.warn(`Failed to load library: ${name}`);
+
+                // return null
+                return null;
+            }
+
+        }
+
+
+
+        /**
+         * Library
+         * 
+         * Get a library from the application
+         * @param name The name of the library
+         * @returns any
+         */
+        public library(name:string) : any {
+            return this.loadedLibraries[name] ?? null;
         }
 
 
@@ -648,7 +723,6 @@ namespace psyn {
 
 
 
-
         /**
          * Parse Template
          * 
@@ -657,7 +731,7 @@ namespace psyn {
          * @param data The data to replace in the template
          * @returns string
          */
-        private parseTemplate(html:string, data:any[] = []) : string {
+        private parseTemplate(html:string, data:{} = {}) : string {
 
             // Define a regular expression pattern to match placeholders like {{key}}
             const placeholderRegex = /\{\{([^}]+)\}\}/g;
@@ -737,10 +811,16 @@ namespace psyn {
          * @emits template_loaded
          * @returns Promise<void>
          */
-        public async template(url:string, data:any[], element:HTMLElement, appendElementHTML:boolean = false) : Promise<void> {
+        public async template(url:string, data:{}, element:HTMLElement, appendElementHTML:boolean = false) : Promise<void> {
 
             // get template html
             const html = await this.html(url);
+
+            // validate input structure
+            if (!this.validInputStructure(data)) {
+                console.warn("Invalid Input Structure");
+                return;
+            }
 
             //parse string
             const buffer = this.parseTemplate(html, data);
@@ -867,6 +947,8 @@ namespace psyn {
 
                 // log error
                 console.warn("No Application Configuration Found!");
+
+                // return empty object
                 return {};
 
             }
@@ -908,9 +990,3 @@ namespace psyn {
 
 
 }
-
-
-/**
- * Procedural Code
- */
-const app = new psyn.App();
