@@ -1,7 +1,7 @@
 /**
  * psyn.app
  * 
- * A simple, fast, and secure web application framework.
+ * A simple and fast web application framework
  * 
  * jsr.io/@psyn/app
  * github.com/psyn-app/app
@@ -598,6 +598,7 @@ namespace psyn {
          * @param sourceName The name of the data source
          * @param interval The interval in milliseconds
          * @emits interval_source_loaded
+         * @emits source_{sourceName}_loaded
          * @returns void
          */
         public sourceOnInterval(sourceName:string, interval:number) : number {
@@ -614,8 +615,9 @@ namespace psyn {
                 // load source
                 await source.load();
 
-                // raise event
+                // raise events
                 this.Events.dispatchEvent(new CustomEvent('interval_source_loaded', {detail: source}));
+                this.Events.dispatchEvent(new CustomEvent(`source_${sourceName}_loaded`, {detail: source}));
 
             }, interval);
 
@@ -643,6 +645,84 @@ namespace psyn {
 
 
 
+
+        /**
+         * Parse Template
+         * 
+         * Parse a template with data
+         * @param html The HTML of the template
+         * @param data The data to replace in the template
+         * @returns string
+         */
+        private parseTemplate(html:string, data:any[] = []) : string {
+
+            // Define a regular expression pattern to match placeholders like {{key}}
+            const placeholderRegex = /\{\{([^}]+)\}\}/g;
+
+            // Match the "each" block for iteration
+            const eachRegex = /\{\{#each\s([^}]+)\}\}([\s\S]*?)\{\{\/each\}\}/g;
+
+            // Replace placeholders and handle each blocks recursively
+            const parsedHTML = html.replace(eachRegex, (match, key, innerHTML) => {
+                // Get the array to iterate over
+                const dataArray = data[key.trim()];
+
+                // If data is not an array, return an empty string
+                if (!Array.isArray(dataArray)) return '';
+
+                // Parse innerHTML for each element in the array
+                const parsedData = dataArray.map(item => {
+                    // Replace placeholders within each object
+                    return innerHTML.replace(placeholderRegex, (match: any, prop: string) => {
+                        const value = item[prop.trim()];
+                        // If the value is not found, return the original match
+                        return value !== undefined ? value : match;
+                    });
+                });
+
+                // Join the parsed innerHTML elements for each data item
+                return parsedData.join('');
+            });
+
+            // Replace any remaining placeholders outside of each blocks
+            const finalHTML = parsedHTML.replace(placeholderRegex, (match, key) => {
+                // Get the value corresponding to the key from the data object
+                const value = data[key.trim()];
+
+                // If the value is not found, return the original match
+                return value !== undefined ? value : match;
+            });
+
+            return finalHTML;
+        }
+
+
+
+        /**
+         * Valid Input Structure
+         * 
+         * Validate the input structure
+         * @param input The input to validate
+         * @returns boolean
+         */
+        private validInputStructure(input:any) : boolean {
+
+            // make sure the input is an array of objects
+            // [{}]
+            if (!Array.isArray(input)) return false;
+
+            // make sure each object is a key-value pair
+            // [{key: value}]
+            for (let i = 0; i < input.length; i++) {
+                if (typeof input[i] !== 'object') return false;
+            }
+
+            // return true
+            return true;
+        }
+
+
+
         /**
          * Template
          * 
@@ -654,24 +734,13 @@ namespace psyn {
          * @emits template_loaded
          * @returns Promise<void>
          */
-        public async template(url:string, data:any, element:HTMLElement, appendElementHTML:boolean = false) : Promise<void> {
+        public async template(url:string, data:any[], element:HTMLElement, appendElementHTML:boolean = false) : Promise<void> {
 
             // get template html
             const html = await this.html(url);
 
-            // find and replace data in html
-            let buffer = html;
-            for (let key in data) {
-
-                // create regular expression
-                const exp:RegExp = new RegExp(`{{${key}}}`, 'g');
-
-                // get value
-                const value = data[key];
-
-                // replace
-                buffer = buffer.replace(exp, value);
-            }
+            //parse string
+            const buffer = this.parseTemplate(html, data);
 
             // append to element
             if (appendElementHTML) {
@@ -682,6 +751,56 @@ namespace psyn {
 
             // raise event
             this.Events.dispatchEvent(new CustomEvent('template_loaded', {detail: {url: url, data: data, element: element}}));
+        }
+
+
+
+        /**
+         * Subscribe Element To Source
+         * 
+         * Subscribe an HTML element to a data source
+         * @param element The HTML element to subscribe
+         * @param htmlTemplate The HTML template to parse
+         * @param dataSource The data source to subscribe to
+         * @param refreshSeconds The interval in seconds to refresh the data source
+         * @returns void
+         */
+        public subscribeElementToSource(element:HTMLElement, htmlTemplate:string, dataSource:DataSource, refreshSeconds?:number) : void {
+
+            // bind to source loaded event
+            this.Events.addEventListener(`source_${dataSource.name}_loaded`, (event:CustomEvent) => {
+
+                // get data
+                const data = event?.detail.data ?? dataSource.data ?? [];
+
+                // parse template
+                const buffer = this.parseTemplate(htmlTemplate, data);
+
+                // append to element
+                element.innerHTML = buffer;
+            });
+
+            // load source on interval
+            this.sourceOnInterval(dataSource.name, refreshSeconds ?? 60000);
+        }
+
+
+
+        /**
+         * Unsubscribe Element From Source
+         * 
+         * Unsubscribe an HTML element from a data source
+         * @param element The HTML element to unsubscribe
+         * @param dataSource The data source to unsubscribe from
+         * @returns void
+         */
+        public unsubscribeElementFromSource(element:HTMLElement, dataSource:DataSource) : void {
+
+            // clear source on interval
+            this.clearSourceOnInterval(dataSource.name);
+
+            // remove event listener
+            this.Events.removeEventListener(`source_${dataSource.name}_loaded`, () => {});
         }
 
 
@@ -711,7 +830,7 @@ namespace psyn {
          * @param url The URL of the page
          * @returns Promise<string>
          */
-        private async html(url:string) : Promise<string> {
+        public async html(url:string) : Promise<string> {
 
             // fetch html
             const response = await fetch(url);
@@ -761,8 +880,19 @@ namespace psyn {
          */
         private detectEnvironment() : RuntimeMode {
 
-            // is not browser
-            if (window?.navigator ?? false) return RuntimeMode.Runtime;
+            const errorMsg:string = "Runtime Mode is not supported. psyn.app is a web application framework and requires a browser environment.";
+
+            try {
+
+                // is not browser
+                if (window?.navigator ?? false) throw new Error(errorMsg);
+
+            } catch (error) {
+
+                //warn
+                console.warn(errorMsg);
+                return RuntimeMode.Runtime;
+            }
 
             // default to browser
             return RuntimeMode.Browser;
