@@ -607,7 +607,7 @@ namespace psyn {
             const source = this.dataSources[sourceName] ?? null;
 
             // if source is not found, return null
-            if (!source) return null;
+            if (!source) return -1;
 
             // set interval
             const timer:number = setInterval(async () => {
@@ -623,6 +623,9 @@ namespace psyn {
 
             // add to timers
             this.dataSourceIntervalTimers[sourceName] = timer;
+
+            // return timer
+            return timer;
         }
 
 
@@ -768,10 +771,10 @@ namespace psyn {
         public subscribeElementToSource(element:HTMLElement, htmlTemplate:string, dataSource:DataSource, refreshSeconds?:number) : void {
 
             // bind to source loaded event
-            this.Events.addEventListener(`source_${dataSource.name}_loaded`, (event:CustomEvent) => {
+            this.Events.addEventListener(`source_${dataSource.name}_loaded`, (event:any) => {
 
                 // get data
-                const data = event?.detail.data ?? dataSource.data ?? [];
+                const data = event?.detail?.data ?? dataSource.data ?? [];
 
                 // parse template
                 const buffer = this.parseTemplate(htmlTemplate, data);
