@@ -340,7 +340,7 @@ namespace psyn {
          * Load the data from the data source
          * @returns Promise<any>
          */
-        public async load() : Promise<any> {
+        public async get() : Promise<any> {
 
             // if cache is enabled and data is not stale, return cached data
             if (this.cacheing && this.lastLoaded && (Date.now() - this.lastLoaded.getTime()) < this.cacheTime) return this.sourceData;
@@ -358,7 +358,298 @@ namespace psyn {
             return this.sourceData;
         }
 
+        public async post() : Promise<any> {
+        }
 
+        public async put() : Promise<any> {
+        }
+
+        public async delete() : Promise<any> {
+        }
+
+
+
+
+
+    }
+
+
+    class Component extends HTMLElement {
+
+        // private properties
+        private root:ShadowRoot;
+        private componentName:string;
+        private componentTemplate:string;
+        private componentSource:DataSource|null;
+        private componentSelector:string;
+        private componentWritable:boolean = false;
+
+        public constructor(name:string, selector:string, attributes?:NamedNodeMap) {
+            super();
+
+            // set component name
+            this.componentName = name;
+
+            // create shadow root
+            this.root = this.attachShadow({mode: 'open'});
+
+            // if attributes are given
+            if (attributes) {
+
+                // set attributes
+                for (let attribute of attributes) {
+                    this.setAttribute(attribute.name, attribute.value);
+                }
+
+            }
+
+            // add custom element
+            customElements.define(`component-${this.name}`, Component);
+
+            // set selector            
+            this.initSelector(selector);
+        }
+
+        private async initSelector(selector:string) {
+
+            // if no selector, return
+            if (!selector) return;
+
+            // set selector
+            this.componentSelector = selector;
+
+            // if selector starts with a '@'
+            // its meant to fetch the template from a URL
+            if (this.componentSelector.startsWith('@')) {
+
+                // template url
+                const url = this.componentSelector.substring(1);
+
+                // fetch template
+                const html:string = await this.fetchTemplate(url);
+
+                // if no html, return
+                if (!html) {
+                    this.template = '';
+                    return;
+                }
+
+                // set template
+                this.template = html;
+
+            // otherwise select the template from the DOM
+            } else {
+
+                // select template
+                const element:HTMLElement|null = document.querySelector(this.componentSelector);
+
+                // if element is not found, return
+                if (!element) {
+                    this.template = '';
+                    return;
+                }
+
+                // set template
+                this.template = element.outerHTML;
+            }
+
+        }
+
+        private async fetchTemplate(url:string) {
+                
+            // fetch template
+            const response = await fetch(url);
+
+            // return template html
+            return await response.text();
+        }
+
+        public static get observedAttributes() : string[] {
+            return ['src', 'writable', 'selector'];
+        }
+
+        public get name() : string {
+            return this.componentName;
+        }
+
+        public get template() : string {
+            return this.componentTemplate;
+        }
+
+        public set template(value:string) {
+            this.componentTemplate = value;
+        }
+
+        public get html() : string {
+            return this.root.innerHTML;
+        }
+
+        public get source() : DataSource|null {
+            return this.componentSource ?? null;
+        }
+
+        public set source(value:DataSource) {
+            this.componentSource = value;
+        }
+
+        public get selector() : string {
+            return this.componentSelector;
+        }
+
+        public set selector(value:string) {
+
+            // if no value, return
+            if (!value) return;
+
+            // if the same value, return
+            if (this.componentSelector === value) return;
+
+            // initialize selector
+            this.initSelector(value);
+        }
+
+        public get writable() : boolean {
+            return this.componentWritable;
+        }
+
+        public set writable(value:boolean) {
+            this.componentWritable = value;
+        }        
+
+        protected connectedCallback() {
+
+            // if no source, return
+            if (!this.componentSource) return;
+
+            // load data
+            this.componentSource.get().then((data:any) => {
+
+                // set data
+                this.componentData = data;
+
+                // render
+                this.render();
+
+            });
+
+        }
+
+        protected disconnectedCallback() : void {
+
+            // clear data
+            this.componentData = null;
+
+            // clear template
+            this.componentTemplate = '';
+
+            // clear source
+            this.componentSource = null;           
+
+            // clear innerHTML
+            this.innerHTML = '';
+
+            // clear shadow root
+            this.root.innerHTML = '';
+
+            // done
+            return;
+        }
+
+        protected attributeChangedCallback(name:string, oldValue:string, newValue:string) {
+
+            switch (name) {
+
+                case 'src':
+                    this.updateDataSourceURL(newValue);
+                    break;
+
+                case 'writable':
+                    this.writable = newValue === 'true';
+                    break;
+
+                case 'selector':
+                    this.selector = newValue;
+                    break;
+
+            }
+
+        }
+
+        protected adoptedCallback() {
+        }
+
+        protected render() {
+            // parse template
+            // set innerHTML of shadow root
+            this.root.innerHTML = this.parseTemplate();
+        }
+
+
+
+        private updateDataSourceURL(url:string) {
+
+            // if no source, return
+            if (this.source == null) {
+                this.componentSource = new DataSource(`${this.tagName}-data`, url);
+                if (this.source == null) return;
+            }
+
+            // if the URL is the same, return
+            if (this.source.url === url) return;
+
+            // update source URL
+            this.source.url = url;
+        }
+
+
+
+        /**
+         * Parse Template
+         * 
+         * Parse a template with data
+         * @returns string
+         */
+        private parseTemplate() : string {
+
+            // Define a regular expression pattern to match placeholders like {{key}}
+            const placeholderRegex = /\{\{([^}]+)\}\}/g;
+
+            // Match the "each" block for iteration
+            const eachRegex = /\{\{#each\s([^}]+)\}\}([\s\S]*?)\{\{\/each\}\}/g;
+
+            // Replace placeholders and handle each blocks recursively
+            const parsedHTML = this.template.replace(eachRegex, (match, key, innerHTML) => {
+                // Get the array to iterate over
+                const dataArray = this.data[key.trim()];
+
+                // If data is not an array, return an empty string
+                if (!Array.isArray(dataArray)) return '';
+
+                // Parse innerHTML for each element in the array
+                const parsedData = dataArray.map(item => {
+                    // Replace placeholders within each object
+                    return innerHTML.replace(placeholderRegex, (match: any, prop: string) => {
+                        const value = item[prop.trim()];
+                        // If the value is not found, return the original match
+                        return value !== undefined ? value : match;
+                    });
+                });
+
+                // Join the parsed innerHTML elements for each data item
+                return parsedData.join('');
+            });
+
+            // Replace any remaining placeholders outside of each blocks
+            const finalHTML = parsedHTML.replace(placeholderRegex, (match, key) => {
+                // Get the value corresponding to the key from the data object
+                const value = this.data[key.trim()];
+
+                // If the value is not found, return the original match
+                return value !== undefined ? value : match;
+            });
+
+            return finalHTML;
+        }
 
     }
 
@@ -655,7 +946,7 @@ namespace psyn {
             if (!source) return null;
 
             // load source
-            const data = await source.load();
+            const data = await source.get();
 
             // raise event
             this.Events.dispatchEvent(new CustomEvent('source_loaded', {detail: source}));
@@ -688,7 +979,7 @@ namespace psyn {
             const timer:number = setInterval(async () => {
 
                 // load source
-                await source.load();
+                await source.get();
 
                 // raise events
                 this.Events.dispatchEvent(new CustomEvent('interval_source_loaded', {detail: source}));
@@ -719,171 +1010,6 @@ namespace psyn {
 
             // if timer is found, clear it
             if (timer) clearInterval(timer);
-        }
-
-
-
-        /**
-         * Parse Template
-         * 
-         * Parse a template with data
-         * @param html The HTML of the template
-         * @param data The data to replace in the template
-         * @returns string
-         */
-        private parseTemplate(html:string, data:{} = {}) : string {
-
-            // Define a regular expression pattern to match placeholders like {{key}}
-            const placeholderRegex = /\{\{([^}]+)\}\}/g;
-
-            // Match the "each" block for iteration
-            const eachRegex = /\{\{#each\s([^}]+)\}\}([\s\S]*?)\{\{\/each\}\}/g;
-
-            // Replace placeholders and handle each blocks recursively
-            const parsedHTML = html.replace(eachRegex, (match, key, innerHTML) => {
-                // Get the array to iterate over
-                const dataArray = data[key.trim()];
-
-                // If data is not an array, return an empty string
-                if (!Array.isArray(dataArray)) return '';
-
-                // Parse innerHTML for each element in the array
-                const parsedData = dataArray.map(item => {
-                    // Replace placeholders within each object
-                    return innerHTML.replace(placeholderRegex, (match: any, prop: string) => {
-                        const value = item[prop.trim()];
-                        // If the value is not found, return the original match
-                        return value !== undefined ? value : match;
-                    });
-                });
-
-                // Join the parsed innerHTML elements for each data item
-                return parsedData.join('');
-            });
-
-            // Replace any remaining placeholders outside of each blocks
-            const finalHTML = parsedHTML.replace(placeholderRegex, (match, key) => {
-                // Get the value corresponding to the key from the data object
-                const value = data[key.trim()];
-
-                // If the value is not found, return the original match
-                return value !== undefined ? value : match;
-            });
-
-            return finalHTML;
-        }
-
-
-
-        /**
-         * Valid Input Structure
-         * 
-         * Validate the input structure
-         * @param input The input to validate
-         * @returns boolean
-         */
-        private validInputStructure(input:any) : boolean {
-
-            // make sure the input is an array of objects
-            // [{}]
-            if (!Array.isArray(input)) return false;
-
-            // make sure each object is a key-value pair
-            // [{key: value}]
-            for (let i = 0; i < input.length; i++) {
-                if (typeof input[i] !== 'object') return false;
-            }
-
-            // return true
-            return true;
-        }
-
-
-
-        /**
-         * Template
-         * 
-         * Load a template into an HTML element from a URL
-         * @param url The URL of the template
-         * @param data The data to replace in the template
-         * @param element The HTML element to load the template into
-         * @param appendElementHTML Append the template to the element's HTML if set to true
-         * @emits template_loaded
-         * @returns Promise<void>
-         */
-        public async template(url:string, data:{}, element:HTMLElement, appendElementHTML:boolean = false) : Promise<void> {
-
-            // get template html
-            const html = await this.html(url);
-
-            // validate input structure
-            if (!this.validInputStructure(data)) {
-                console.warn("Invalid Input Structure");
-                return;
-            }
-
-            //parse string
-            const buffer = this.parseTemplate(html, data);
-
-            // append to element
-            if (appendElementHTML) {
-                element.innerHTML += buffer;
-            } else {
-                element.innerHTML = buffer;
-            }
-
-            // raise event
-            this.Events.dispatchEvent(new CustomEvent('template_loaded', {detail: {url: url, data: data, element: element}}));
-        }
-
-
-
-        /**
-         * Subscribe Element To Source
-         * 
-         * Subscribe an HTML element to a data source
-         * @param element The HTML element to subscribe
-         * @param htmlTemplate The HTML template to parse
-         * @param dataSource The data source to subscribe to
-         * @param refreshSeconds The interval in seconds to refresh the data source
-         * @returns void
-         */
-        public subscribeElementToSource(element:HTMLElement, htmlTemplate:string, dataSource:DataSource, refreshSeconds?:number) : void {
-
-            // bind to source loaded event
-            this.Events.addEventListener(`source_${dataSource.name}_loaded`, (event:any) => {
-
-                // get data
-                const data = event?.detail?.data ?? dataSource.data ?? [];
-
-                // parse template
-                const buffer = this.parseTemplate(htmlTemplate, data);
-
-                // append to element
-                element.innerHTML = buffer;
-            });
-
-            // load source on interval
-            this.sourceOnInterval(dataSource.name, refreshSeconds ?? 60000);
-        }
-
-
-
-        /**
-         * Unsubscribe Element From Source
-         * 
-         * Unsubscribe an HTML element from a data source
-         * @param element The HTML element to unsubscribe
-         * @param dataSource The data source to unsubscribe from
-         * @returns void
-         */
-        public unsubscribeElementFromSource(element:HTMLElement, dataSource:DataSource) : void {
-
-            // clear source on interval
-            this.clearSourceOnInterval(dataSource.name);
-
-            // remove event listener
-            this.Events.removeEventListener(`source_${dataSource.name}_loaded`, () => {});
         }
 
 
