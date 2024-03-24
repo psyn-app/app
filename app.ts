@@ -384,6 +384,8 @@ namespace psyn {
         private componentSelector:string;
         private componentWritable:boolean = false;
 
+
+
         public constructor(name:string, selector:string, attributes?:NamedNodeMap) {
             super();
 
@@ -409,6 +411,8 @@ namespace psyn {
             // set selector            
             this.initSelector(selector);
         }
+
+
 
         private async initSelector(selector:string) {
 
@@ -455,6 +459,8 @@ namespace psyn {
 
         }
 
+
+
         private async fetchTemplate(url:string) {
                 
             // fetch template
@@ -464,37 +470,55 @@ namespace psyn {
             return await response.text();
         }
 
+
+
         public static get observedAttributes() : string[] {
             return ['src', 'writable', 'selector'];
         }
+
+
 
         public get name() : string {
             return this.componentName;
         }
 
+
+
         public get template() : string {
             return this.componentTemplate;
         }
+
+
 
         public set template(value:string) {
             this.componentTemplate = value;
         }
 
+
+
         public get html() : string {
             return this.root.innerHTML;
         }
+
+
 
         public get source() : DataSource|null {
             return this.componentSource ?? null;
         }
 
+
+
         public set source(value:DataSource) {
             this.componentSource = value;
         }
 
+
+
         public get selector() : string {
             return this.componentSelector;
         }
+
+
 
         public set selector(value:string) {
 
@@ -508,52 +532,26 @@ namespace psyn {
             this.initSelector(value);
         }
 
+
+
         public get writable() : boolean {
             return this.componentWritable;
         }
+
+
 
         public set writable(value:boolean) {
             this.componentWritable = value;
         }        
 
+
+
         protected connectedCallback() {
-
-            // if no source, return
-            if (!this.componentSource) return;
-
-            // load data
-            this.componentSource.get().then((data:any) => {
-
-                // set data
-                this.componentData = data;
-
-                // render
-                this.render();
-
-            });
-
+            // render
+            this.render();
         }
 
-        protected disconnectedCallback() : void {
 
-            // clear data
-            this.componentData = null;
-
-            // clear template
-            this.componentTemplate = '';
-
-            // clear source
-            this.componentSource = null;           
-
-            // clear innerHTML
-            this.innerHTML = '';
-
-            // clear shadow root
-            this.root.innerHTML = '';
-
-            // done
-            return;
-        }
 
         protected attributeChangedCallback(name:string, oldValue:string, newValue:string) {
 
@@ -575,8 +573,12 @@ namespace psyn {
 
         }
 
+
+
         protected adoptedCallback() {
         }
+
+
 
         protected render() {
             // parse template
@@ -619,8 +621,12 @@ namespace psyn {
 
             // Replace placeholders and handle each blocks recursively
             const parsedHTML = this.template.replace(eachRegex, (match, key, innerHTML) => {
+
+                // if no source, return an empty string
+                if (!this.source) return '';
+
                 // Get the array to iterate over
-                const dataArray = this.data[key.trim()];
+                const dataArray = this.source.data[key.trim()];
 
                 // If data is not an array, return an empty string
                 if (!Array.isArray(dataArray)) return '';
@@ -641,8 +647,12 @@ namespace psyn {
 
             // Replace any remaining placeholders outside of each blocks
             const finalHTML = parsedHTML.replace(placeholderRegex, (match, key) => {
+
+                // If no source, return the original match
+                if (!this.source) return match;
+
                 // Get the value corresponding to the key from the data object
-                const value = this.data[key.trim()];
+                const value = this.source.data[key.trim()];
 
                 // If the value is not found, return the original match
                 return value !== undefined ? value : match;
@@ -650,6 +660,8 @@ namespace psyn {
 
             return finalHTML;
         }
+
+
 
     }
 
